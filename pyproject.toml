@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trav-cfd-py-fluent"
+version = "0.1.0"
+description = "Static context extraction toolkit for state-dependent Ansys PyFluent APIs"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "CFD Team" }]
+dependencies = [
+  "ansys-fluent-core>=0.25",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
