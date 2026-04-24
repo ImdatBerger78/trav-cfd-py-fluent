@@ -23,34 +23,69 @@ def safe_getattr(obj: Any, attr: str) -> Any:
 
 
 def build_api_tree(
-    root_obj: Any,
-    root_name: str = "SolverSession",
-    max_depth: int = 6,
-    max_children_per_node: int = 200,
+        root_obj: Any,
+        root_name: str = "SolverSession",
+        max_depth: int = 6,
+        max_children_per_node: int = 200,
 ) -> ApiNode:
     """Recursively scan a session object and build a conservative API tree."""
 
     visited: set[int] = set()
+    IGNORE_TYPES = (str, int, float, bool, bytes, complex, type(None))
+
+    # Filter out standard list/dict methods to reduce context window noise
+    NOISE_METHODS = {
+        "append", "clear", "copy", "count", "extend", "index", "insert",
+        "pop", "remove", "reverse", "sort", "fromkeys", "get", "items",
+        "keys", "popitem", "setdefault", "update", "values"
+    }
 
     def walk(obj: Any, name: str, depth: int) -> ApiNode:
+        if isinstance(obj, IGNORE_TYPES):
+            return ApiNode(name=name)
+
         node = ApiNode(name=name)
         obj_id = id(obj)
         if depth > max_depth or obj_id in visited:
             return node
         visited.add(obj_id)
 
+        # 1. Capture dictionary keys FIRST (Crucial for PyFluent TaskObjects/Zones)
+        if hasattr(obj, "keys") and callable(getattr(obj, "keys")):
+            try:
+                for key in list(obj.keys())[:max_children_per_node]:
+                    if isinstance(key, str):
+                        key_name = f"['{key}']"
+                        # Attempt to walk into the specific task to capture its arguments
+                        try:
+                            child_obj = obj[key]
+                            node.children[key_name] = walk(child_obj, key_name, depth + 1)
+                        except Exception:
+                            node.children[key_name] = ApiNode(name=key_name)
+            except Exception:
+                pass
+
+        # 2. Capture standard attributes
         names = sorted(n for n in dir(obj) if n and not n.startswith("_"))[:max_children_per_node]
         for attr_name in names:
-            if not attr_name.isidentifier():
+            if not attr_name.isidentifier() or attr_name in NOISE_METHODS:
                 continue
+
             attr = safe_getattr(obj, attr_name)
             if attr is None:
                 continue
-            if callable(attr):
+
+            # THE FIX: PyFluent proxies (like TaskObject) are callable, but they are also containers.
+            # We must treat them as objects to crawl, not just as endpoints/methods.
+            is_container = hasattr(attr, "keys") or hasattr(attr, "get_object_names")
+
+            if callable(attr) and not is_container:
                 node.methods.add(attr_name)
                 continue
+
             child = walk(attr, attr_name, depth + 1)
             node.children[attr_name] = child
+
         return node
 
     return walk(root_obj, root_name, depth=0)

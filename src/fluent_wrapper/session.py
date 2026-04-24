@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -15,6 +16,7 @@ class LaunchMode(str, Enum):
 
     SOLVER = "solver"
     MESHING = "meshing"
+    PRE_POST = "pre_post"
 
 
 class Precision(str, Enum):
@@ -38,7 +40,8 @@ class FluentLaunchConfig:
     mode: LaunchMode
     precision: Precision = Precision.DOUBLE
     processor_count: int = 2
-    start_transcript: bool = False
+    start_transcript: bool = True
+    show_gui: bool = True
 
 
 class FluentSessionWrapper:
@@ -66,6 +69,10 @@ class FluentSessionWrapper:
             RuntimeError: If `ansys-fluent-core` is missing or launch fails.
         """
 
+        # --- NEW: Bypass enterprise proxies for local gRPC communication ---
+        os.environ["NO_PROXY"] = "localhost,127.0.0.1,::1"
+
+
         try:
             import ansys.fluent.core as pyfluent
         except ImportError as exc:
@@ -73,12 +80,20 @@ class FluentSessionWrapper:
                 "ansys-fluent-core is not installed in this environment."
             ) from exc
 
+        mode_mapping = {
+            LaunchMode.SOLVER: pyfluent.FluentMode.SOLVER,
+            LaunchMode.MESHING: pyfluent.FluentMode.MESHING,
+            LaunchMode.PRE_POST: pyfluent.FluentMode.PRE_POST,
+        }
+        fluent_mode = mode_mapping.get(config.mode, pyfluent.FluentMode.SOLVER)
+
         try:
             self.session = pyfluent.launch_fluent(
-                mode=config.mode.value,
+                mode=fluent_mode,
                 precision=config.precision.value,
                 processor_count=config.processor_count,
                 start_transcript=config.start_transcript,
+                show_gui=config.show_gui,
             )
             return self.session
         except Exception as exc:
