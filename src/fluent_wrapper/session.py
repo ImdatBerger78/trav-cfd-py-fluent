@@ -39,7 +39,7 @@ class FluentLaunchConfig:
 
     mode: LaunchMode
     precision: Precision = Precision.DOUBLE
-    processor_count: int = 2
+    processor_count: int = 24
     start_transcript: bool = True
     show_gui: bool = True
 
@@ -93,7 +93,7 @@ class FluentSessionWrapper:
                 precision=config.precision.value,
                 processor_count=config.processor_count,
                 start_transcript=config.start_transcript,
-                show_gui=config.show_gui,
+                ui_mode=config.show_gui,
             )
             return self.session
         except Exception as exc:

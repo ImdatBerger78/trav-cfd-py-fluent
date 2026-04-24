@@ -33,11 +33,15 @@ def build_api_tree(
     visited: set[int] = set()
     IGNORE_TYPES = (str, int, float, bool, bytes, complex, type(None))
 
-    # Filter out standard list/dict methods to reduce context window noise
+    # NEW: Expanded noise filter to hide Ansys internal proxy methods from Copilot
     NOISE_METHODS = {
         "append", "clear", "copy", "count", "extend", "index", "insert",
         "pop", "remove", "reverse", "sort", "fromkeys", "get", "items",
-        "keys", "popitem", "setdefault", "update", "values"
+        "keys", "popitem", "setdefault", "update", "values",
+        "get_active_child_names", "get_active_command_names", "get_active_query_names",
+        "get_attr", "get_attrs", "get_state", "set_state", "print_state", "is_active",
+        "is_read_only", "child_names", "command_names", "query_names", "flproxy",
+        "fluent_name", "obj_name", "python_name", "python_path", "to_python_keys", "to_scheme_keys"
     }
 
     def walk(obj: Any, name: str, depth: int) -> ApiNode:
@@ -50,23 +54,27 @@ def build_api_tree(
             return node
         visited.add(obj_id)
 
-        # 1. Capture dictionary keys FIRST (Crucial for PyFluent TaskObjects/Zones)
-        if hasattr(obj, "keys") and callable(getattr(obj, "keys")):
-            try:
+        # 1. Capture dictionary keys safely
+        try:
+            if hasattr(obj, "keys") and callable(getattr(obj, "keys")):
                 for key in list(obj.keys())[:max_children_per_node]:
                     if isinstance(key, str):
                         key_name = f"['{key}']"
-                        # Attempt to walk into the specific task to capture its arguments
                         try:
                             child_obj = obj[key]
                             node.children[key_name] = walk(child_obj, key_name, depth + 1)
                         except Exception:
                             node.children[key_name] = ApiNode(name=key_name)
-            except Exception:
-                pass
+        except Exception:
+            pass
 
-        # 2. Capture standard attributes
-        names = sorted(n for n in dir(obj) if n and not n.startswith("_"))[:max_children_per_node]
+        # 2. Capture standard attributes safely
+        try:
+            # If dir() fails on an inactive object, default to an empty list
+            names = sorted(n for n in dir(obj) if n and not n.startswith("_"))[:max_children_per_node]
+        except Exception:
+            names = []
+
         for attr_name in names:
             if not attr_name.isidentifier() or attr_name in NOISE_METHODS:
                 continue
@@ -75,16 +83,27 @@ def build_api_tree(
             if attr is None:
                 continue
 
-            # THE FIX: PyFluent proxies (like TaskObject) are callable, but they are also containers.
-            # We must treat them as objects to crawl, not just as endpoints/methods.
-            is_container = hasattr(attr, "keys") or hasattr(attr, "get_object_names")
+            try:
+                # If checking properties throws an Inactive error, fail gracefully
+                is_container = (
+                        hasattr(attr, "keys") or
+                        hasattr(attr, "get_object_names") or
+                        hasattr(attr, "get_state") or
+                        hasattr(attr, "child_names")
+                )
+            except Exception:
+                is_container = False
 
             if callable(attr) and not is_container:
                 node.methods.add(attr_name)
                 continue
 
-            child = walk(attr, attr_name, depth + 1)
-            node.children[attr_name] = child
+            try:
+                child = walk(attr, attr_name, depth + 1)
+                node.children[attr_name] = child
+            except Exception:
+                # If we absolutely cannot crawl it (e.g. inactive model), just log the endpoint
+                node.children[attr_name] = ApiNode(name=attr_name)
 
         return node
 
