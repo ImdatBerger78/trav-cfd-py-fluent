@@ -10,7 +10,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from fluent_wrapper.introspection import build_api_tree, render_markdown_context
+from fluent_wrapper.introspection import render_markdown_context, build_meshing_tree
 from fluent_wrapper.session import FluentLaunchConfig, FluentSessionWrapper, LaunchMode
 
 DEFAULT_BASE_DIR = Path(r"S:\SIMULATIONSDATEN\SIMULATIONS\AKW\imma\trav-cfd-py-fluent")
@@ -58,7 +58,7 @@ def main() -> int:
 
         # Meshing-specific context should focus on workflow branch when available.
         root_obj = getattr(session, "workflow", session)
-        tree = build_api_tree(root_obj, root_name="MeshingWorkflow", max_depth=args.max_depth)
+        tree = build_meshing_tree(root_obj, root_name="MeshingWorkflow", max_depth=args.max_depth)
         markdown = render_markdown_context(tree, title="Meshing API Context")
         output_file.write_text(markdown, encoding="utf-8")
 

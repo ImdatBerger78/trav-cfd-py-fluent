@@ -93,7 +93,7 @@ class FluentSessionWrapper:
                 precision=config.precision.value,
                 processor_count=config.processor_count,
                 start_transcript=config.start_transcript,
-                ui_mode=config.show_gui,
+                ui_mode="gui" if config.show_gui else "hidden_gui",
             )
             return self.session
         except Exception as exc:

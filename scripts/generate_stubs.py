@@ -10,7 +10,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from fluent_wrapper.introspection import build_api_tree, render_pyi_from_tree
+from fluent_wrapper.introspection import render_pyi_from_tree, build_solver_tree
 from fluent_wrapper.session import FluentLaunchConfig, FluentSessionWrapper, LaunchMode
 
 DEFAULT_BASE_DIR = Path(r"S:\SIMULATIONSDATEN\SIMULATIONS\AKW\imma\trav-cfd-py-fluent")
@@ -39,17 +39,15 @@ def main() -> int:
         help="Optional explicit .cas file path. If omitted, first *.cas in 03_PrePost is used.",
     )
     parser.add_argument(
-        "--output",
+        "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "generated" / "stubs" / "solver_session.pyi",
+        default=PROJECT_ROOT / "generated" / "stubs",
     )
     parser.add_argument("--max-depth", type=int, default=6)
     args = parser.parse_args()
 
     base_dir = args.base_dir.expanduser().resolve()
     case_file = _find_case_file(base_dir, args.case_file)
-    output_file = args.output.expanduser().resolve()
-    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     wrapper = FluentSessionWrapper()
     try:
@@ -90,6 +88,14 @@ def main() -> int:
 
         print(f"\n[INFO] Extracting the following branches: {targets}")
 
+        # --- NEW: Dynamically generate the output filename ---
+        # Convert "setup.models" into "setup_models" and join them if multiple are selected
+        safe_names = [t.replace(".", "_") for t in targets]
+        dynamic_filename = "_and_".join(safe_names)[:100] + ".pyi"  # Limit length just in case
+
+        output_file = args.output_dir.expanduser().resolve() / dynamic_filename
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
         # Helper to fetch nested objects from the active session
         def get_nested_attr(base_obj, path):
             current = base_obj
@@ -106,17 +112,11 @@ def main() -> int:
                 target_obj = get_nested_attr(session, target_path)
 
                 # Render the stubs for this specific branch
-                tree = build_api_tree(target_obj, root_name=target_path.replace(".", "_"), max_depth=5)
+                tree = build_solver_tree(target_obj, root_name=target_path.replace(".", "_"), max_depth=5)
                 stub_text = render_pyi_from_tree(tree)
                 f.write(stub_text + "\n\n")
 
         print(f"[OK] Wrote targeted stubs: {output_file}")
-        tree = build_api_tree(session, root_name="SolverSession", max_depth=args.max_depth)
-        stub_text = render_pyi_from_tree(tree)
-        output_file.write_text(stub_text, encoding="utf-8")
-
-        print(f"[OK] Loaded case: {case_file}")
-        print(f"[OK] Wrote stubs: {output_file}")
         return 0
     except Exception as exc:
         print(f"[ERROR] Stub generation failed: {exc}", file=sys.stderr)
