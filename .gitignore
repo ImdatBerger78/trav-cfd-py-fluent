@@ -8,6 +8,14 @@ __pycache__/
 # Generated artifacts
 generated/
 
+# Fluent runtime artifacts
+*.trn
+*.log
+cleanup-fluent-*.bat
+
+# Build/packaging artifacts
+*.egg-info/
+
 # IDE
 .idea/
 .vscode/
